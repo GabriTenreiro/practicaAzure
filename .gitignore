@@ -47,3 +47,6 @@ credentials.json
 
 # Azure CLI cache
 .azure/
+
+# Synapse stubs (auto-generated type hints)
+synapse/.stubs/
