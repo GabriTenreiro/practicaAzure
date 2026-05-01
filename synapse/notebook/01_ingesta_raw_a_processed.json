@@ -3,28 +3,48 @@
 	"properties": {
 		"nbformat": 4,
 		"nbformat_minor": 2,
+		"bigDataPool": {
+			"referenceName": "sparkpoollaptop",
+			"type": "BigDataPoolReference"
+		},
 		"sessionProperties": {
 			"driverMemory": "28g",
 			"driverCores": 4,
 			"executorMemory": "28g",
 			"executorCores": 4,
-			"numExecutors": 2,
+			"numExecutors": 1,
 			"runAsWorkspaceSystemIdentity": false,
 			"conf": {
 				"spark.dynamicAllocation.enabled": "false",
-				"spark.dynamicAllocation.minExecutors": "2",
-				"spark.dynamicAllocation.maxExecutors": "2",
-				"spark.autotune.trackingId": "b5430557-a84a-4ce6-afdb-5c7cb55d851d"
+				"spark.dynamicAllocation.minExecutors": "1",
+				"spark.dynamicAllocation.maxExecutors": "1",
+				"spark.autotune.trackingId": "30a69006-cabe-43fa-abdb-6b0286ba4ee4"
 			}
 		},
 		"metadata": {
 			"saveOutput": true,
-			"synapse_widget": {
-				"version": "0.1"
-			},
 			"enableDebugMode": false,
+			"kernelspec": {
+				"name": "synapse_pyspark",
+				"display_name": "Synapse PySpark"
+			},
 			"language_info": {
 				"name": "python"
+			},
+			"a365ComputeOptions": {
+				"id": "/subscriptions/e5e55830-4163-4a94-bf6c-ed6c26257dfc/resourceGroups/rg-gabritenreiro/providers/Microsoft.Synapse/workspaces/syn-laptop-dl-dev-001/bigDataPools/sparkpoollaptop",
+				"name": "sparkpoollaptop",
+				"type": "Spark",
+				"endpoint": "https://syn-laptop-dl-dev-001.dev.azuresynapse.net/livyApi/versions/2019-11-01-preview/sparkPools/sparkpoollaptop",
+				"auth": {
+					"type": "AAD",
+					"authResource": "https://dev.azuresynapse.net"
+				},
+				"sparkVersion": "3.4",
+				"nodeCount": 3,
+				"cores": 4,
+				"memory": 28,
+				"automaticScaleJobs": false
 			},
 			"sessionKeepAliveTimeout": 30
 		},
@@ -62,8 +82,8 @@
 					"    pass\n",
 					"\n",
 					"RAW_PATH = f'abfss://raw@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptop_scrap_data.csv'\n",
-					"PROCESSED_PATH = f'abfss://processed@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
-					"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+					"PROCESSED_PATH = f'abfss://processed@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptops_clean'\n",
+					"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptops_quarantine'\n",
 					"\n",
 					"assert RAW_PATH and PROCESSED_PATH and QUARANTINE_PATH, 'Paths cannot be empty'\n",
 					"\n",
@@ -72,7 +92,8 @@
 					"print(f'Processed: {PROCESSED_PATH}')\n",
 					"print(f'Quarantine: {QUARANTINE_PATH}')\n",
 					"print(f'Spark version: {spark.version}')"
-				]
+				],
+				"execution_count": 15
 			},
 			{
 				"cell_type": "markdown",
@@ -120,19 +141,22 @@
 					"print(f'Filas cargadas: {df_raw.count():,}')\n",
 					"print(f'Columnas: {len(df_raw.columns)}')\n",
 					"print(f'Particiones: {df_raw.rdd.getNumPartitions()}')"
-				]
+				],
+				"execution_count": 16
 			},
 			{
 				"cell_type": "code",
 				"source": [
 					"df_raw.printSchema()"
-				]
+				],
+				"execution_count": 17
 			},
 			{
 				"cell_type": "code",
 				"source": [
 					"df_raw.show(5, truncate=False, vertical=True)"
-				]
+				],
+				"execution_count": 18
 			},
 			{
 				"cell_type": "markdown",
@@ -151,7 +175,8 @@
 					"])\n",
 					"print('Conteo de nulos por columna:')\n",
 					"null_profile.show(vertical=True)"
-				]
+				],
+				"execution_count": 19
 			},
 			{
 				"cell_type": "code",
@@ -165,7 +190,8 @@
 					"\n",
 					"print('% de nulos por columna:')\n",
 					"null_counts.show(vertical=True)"
-				]
+				],
+				"execution_count": 20
 			},
 			{
 				"cell_type": "code",
@@ -173,7 +199,8 @@
 					"# Duplicados exactos\n",
 					"dup_count = df_raw.count() - df_raw.distinct().count()\n",
 					"print(f'Filas duplicadas exactas: {dup_count}')"
-				]
+				],
+				"execution_count": 21
 			},
 			{
 				"cell_type": "code",
@@ -183,7 +210,8 @@
 					"print('Columnas numéricas:', numeric_cols)\n",
 					"\n",
 					"df_raw.select(numeric_cols).summary().show(vertical=True, truncate=False)"
-				]
+				],
+				"execution_count": 22
 			},
 			{
 				"cell_type": "markdown",
@@ -213,14 +241,16 @@
 					"\n",
 					"print(f'Registros en Quarantine: {df_quarantine.count():,}')\n",
 					"print(f'Registros Clean: {df_clean.count():,}')"
-				]
+				],
+				"execution_count": 23
 			},
 			{
 				"cell_type": "code",
 				"source": [
 					"# Inspeccionar qué se fue a quarantine\n",
 					"df_quarantine.show(20, truncate=False)"
-				]
+				],
+				"execution_count": 24
 			},
 			{
 				"cell_type": "markdown",
@@ -255,7 +285,8 @@
 					"\n",
 					"print('Schema processed:')\n",
 					"df_clean.printSchema()"
-				]
+				],
+				"execution_count": 25
 			},
 			{
 				"cell_type": "markdown",
@@ -278,7 +309,8 @@
 					"    .parquet(QUARANTINE_PATH)\n",
 					"\n",
 					"print('✅ Datos escritos en processed/ y quarantine/')"
-				]
+				],
+				"execution_count": 26
 			},
 			{
 				"cell_type": "code",
@@ -292,7 +324,8 @@
 					"\n",
 					"print('\\nColumnas en processed:', df_check_processed.columns)\n",
 					"df_check_processed.show(3, truncate=False, vertical=True)"
-				]
+				],
+				"execution_count": 27
 			},
 			{
 				"cell_type": "code",
@@ -301,7 +334,8 @@
 					"quarantine_count = df_quarantine.count()\n",
 					"print(f'\\n📤 Exit value: {quarantine_count} filas en quarantine')\n",
 					"mssparkutils.notebook.exit(quarantine_count)"
-				]
+				],
+				"execution_count": 28
 			}
 		]
 	}
