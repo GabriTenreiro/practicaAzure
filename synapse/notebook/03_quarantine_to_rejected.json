@@ -1,0 +1,178 @@
+{
+	"name": "03_quarantine_to_rejected",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "90703033-e8fe-47af-8f49-161aa1c8778f"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "markdown",
+				"source": [
+					"# Fase 3: Quarantine → Rejected\n",
+					"## Separación de registros irrecuperables vs revisables\n",
+					"\n",
+					"**Origen:** `abfss://quarantine@stgabritenreiroprueba.dfs.core.windows.net/`  \n",
+					"**Destinos:**\n",
+					"- `abfss://rejected@...` — Filas 100% NULL (irrecuperables)\n",
+					"- `abfss://quarantine@...` — Reescrito solo con filas recuperables"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import functions as F\n",
+					"\n",
+					"try:\n",
+					"    from notebookutils import mssparkutils\n",
+					"# Storage account (hardcoded default, override via pipeline parameters if needed)\n",
+					"STORAGE_ACCOUNT = 'stgabritenreiroprueba'\n",
+					"\n",
+					"# Try to override with pipeline parameter\n",
+					"try:\n",
+					"    from notebookutils import mssparkutils\n",
+					"    param = mssparkutils.notebook.getParameter('storage_account')\n",
+					"    if param and param.strip():\n",
+					"        STORAGE_ACCOUNT = param.strip()\n",
+					"except Exception:\n",
+					"    pass\n",
+					"\n",
+					"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+					"REJECTED_PATH = f'abfss://rejected@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+					"\n",
+					"assert QUARANTINE_PATH and REJECTED_PATH, 'Paths cannot be empty'\n",
+					"\n",
+					"print(f'Storage: {STORAGE_ACCOUNT}')\n",
+					"print(f'Quarantine: {QUARANTINE_PATH}')\n",
+					"print(f'Rejected: {REJECTED_PATH}')\n",
+					"print(f'Spark version: {spark.version}')"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 1. Lectura de quarantine"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"df_quarantine = spark.read.parquet(QUARANTINE_PATH)\n",
+					"\n",
+					"print(f'Filas en quarantine: {df_quarantine.count():,}')\n",
+					"df_quarantine.printSchema()"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"df_quarantine.show(20, truncate=False)"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 2. Clasificación: Rejected vs Quarantine recuperable\n",
+					"\n",
+					"- **Rejected**: filas donde TODAS las columnas son NULL (datos completamente perdidos)\n",
+					"- **Quarantine keep**: filas con al menos algún dato pero que fallaron reglas de calidad"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Contar nulos por fila\n",
+					"total_cols = len(df_quarantine.columns)\n",
+					"\n",
+					"null_count_expr = sum(F.col(c).isNull().cast('int') for c in df_quarantine.columns)\n",
+					"\n",
+					"df_classified = df_quarantine.withColumn('null_count', null_count_expr)\n",
+					"\n",
+					"df_rejected = df_classified.filter(F.col('null_count') == total_cols)\n",
+					"df_quarantine_keep = df_classified.filter(F.col('null_count') < total_cols)\n",
+					"\n",
+					"print(f'RegistrosRejected (100% NULL): {df_rejected.count():,}')\n",
+					"print(f'Registros Quarantine recuperables: {df_quarantine_keep.count():,}')"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Ver rejected\n",
+					"print('=== REJECTED (filas irrecuperables) ===')\n",
+					"df_rejected.show(10, truncate=False)\n",
+					"\n",
+					"print('\\n=== QUARANTINE KEEP (filas recuperables) ===')\n",
+					"df_quarantine_keep.show(20, truncate=False)"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 3. Escritura a Rejected y reescritura de Quarantine"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Escribir rejected (sin la columna auxiliar null_count)\n",
+					"df_rejected.drop('null_count').write \\\n",
+					"    .mode('overwrite') \\\n",
+					"    .option('compression', 'snappy') \\\n",
+					"    .parquet(REJECTED_PATH)\n",
+					"\n",
+					"# Reescribir quarantine solo con recuperables\n",
+					"df_quarantine_keep.drop('null_count').write \\\n",
+					"    .mode('overwrite') \\\n",
+					"    .option('compression', 'snappy') \\\n",
+					"    .parquet(QUARANTINE_PATH)\n",
+					"\n",
+					"print('✅ Datos escritos en rejected/ y quarantine/ actualizado')"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Verificación final\n",
+					"df_check_rejected = spark.read.parquet(REJECTED_PATH)\n",
+					"df_check_quarantine = spark.read.parquet(QUARANTINE_PATH)\n",
+					"\n",
+					"print(f'Rejected - Filas: {df_check_rejected.count():,}')\n",
+					"print(f'Quarantine (recuperables) - Filas: {df_check_quarantine.count():,}')\n",
+					"\n",
+					"print('\\n📊 Resumen final del pipeline:')\n",
+					"print(f'  Raw total:        1,563')\n",
+					"print(f'  Processed:        1,549')\n",
+					"print(f'  Quarantine:       {df_check_quarantine.count():,}')\n",
+					"print(f'  Rejected:         {df_check_rejected.count():,}')"
+				]
+			}
+		]
+	}
+}

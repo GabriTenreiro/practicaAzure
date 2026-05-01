@@ -1,0 +1,308 @@
+{
+	"name": "01_ingesta_raw_a_processed",
+	"properties": {
+		"nbformat": 4,
+		"nbformat_minor": 2,
+		"sessionProperties": {
+			"driverMemory": "28g",
+			"driverCores": 4,
+			"executorMemory": "28g",
+			"executorCores": 4,
+			"numExecutors": 2,
+			"runAsWorkspaceSystemIdentity": false,
+			"conf": {
+				"spark.dynamicAllocation.enabled": "false",
+				"spark.dynamicAllocation.minExecutors": "2",
+				"spark.dynamicAllocation.maxExecutors": "2",
+				"spark.autotune.trackingId": "b5430557-a84a-4ce6-afdb-5c7cb55d851d"
+			}
+		},
+		"metadata": {
+			"saveOutput": true,
+			"synapse_widget": {
+				"version": "0.1"
+			},
+			"enableDebugMode": false,
+			"language_info": {
+				"name": "python"
+			},
+			"sessionKeepAliveTimeout": 30
+		},
+		"cells": [
+			{
+				"cell_type": "markdown",
+				"source": [
+					"# Fase 1: Ingesta con PySpark en Azure Synapse\n",
+					"## Carga desde Raw → Calidad → Quarantine → Processed\n",
+					"\n",
+					"**Dataset:** `laptop_scrap_data.csv`  \n",
+					"**Origen:** `abfss://raw@stgabritenreiroprueba.dfs.core.windows.net/`  \n",
+					"**Destinos:** `abfss://processed@...` (datos limpios) y `abfss://quarantine@...` (registros anómalos)\n",
+					"\n",
+					"> **Nota:** En Synapse, la variable `spark` ya viene inyectada. No es necesario crear SparkSession."
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"from pyspark.sql import functions as F\n",
+					"from pyspark.sql.types import *\n",
+					"from pyspark.sql.window import Window\n",
+					"\n",
+					"# Storage account (hardcoded default, override via pipeline parameters if needed)\n",
+					"STORAGE_ACCOUNT = 'stgabritenreiroprueba'\n",
+					"\n",
+					"# Try to override with pipeline parameter\n",
+					"try:\n",
+					"    from notebookutils import mssparkutils\n",
+					"    param = mssparkutils.notebook.getParameter('storage_account')\n",
+					"    if param and param.strip():\n",
+					"        STORAGE_ACCOUNT = param.strip()\n",
+					"except Exception:\n",
+					"    pass\n",
+					"\n",
+					"RAW_PATH = f'abfss://raw@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptop_scrap_data.csv'\n",
+					"PROCESSED_PATH = f'abfss://processed@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+					"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+					"\n",
+					"assert RAW_PATH and PROCESSED_PATH and QUARANTINE_PATH, 'Paths cannot be empty'\n",
+					"\n",
+					"print(f'Storage: {STORAGE_ACCOUNT}')\n",
+					"print(f'Raw: {RAW_PATH}')\n",
+					"print(f'Processed: {PROCESSED_PATH}')\n",
+					"print(f'Quarantine: {QUARANTINE_PATH}')\n",
+					"print(f'Spark version: {spark.version}')"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 1. Lectura del dataset RAW con schema explícito"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Schema explícito para evitar inferSchema=true (más fiable en producción)\n",
+					"laptop_schema = StructType([\n",
+					"    StructField('Company', StringType(), True),\n",
+					"    StructField('TypeName', StringType(), True),\n",
+					"    StructField('Inches', DoubleType(), True),\n",
+					"    StructField('ScreenResolution', StringType(), True),\n",
+					"    StructField('Cpu', StringType(), True),\n",
+					"    StructField('Gpu', StringType(), True),\n",
+					"    StructField('OpSys', StringType(), True),\n",
+					"    StructField('TouchScreen', IntegerType(), True),\n",
+					"    StructField('Ips', IntegerType(), True),\n",
+					"    StructField('X_res', IntegerType(), True),\n",
+					"    StructField('Y_res', IntegerType(), True),\n",
+					"    StructField('ppi', DoubleType(), True),\n",
+					"    StructField('Dedicated_Gpu', IntegerType(), True),\n",
+					"    StructField('Ram_GB', IntegerType(), True),\n",
+					"    StructField('Weight_kg', DoubleType(), True),\n",
+					"    StructField('SSD', IntegerType(), True),\n",
+					"    StructField('HHD', IntegerType(), True),\n",
+					"    StructField('Storage_Type', StringType(), True),\n",
+					"    StructField('Total_Storage_GB', IntegerType(), True),\n",
+					"    StructField('Storage_Category', StringType(), True),\n",
+					"    StructField('Price', DoubleType(), True),\n",
+					"])\n",
+					"\n",
+					"df_raw = spark.read \\\n",
+					"    .option('header', 'true') \\\n",
+					"    .option('quote', '\\\"') \\\n",
+					"    .option('escape', '\\\"') \\\n",
+					"    .option('treatEmptyValuesAsNulls', 'true') \\\n",
+					"    .schema(laptop_schema) \\\n",
+					"    .csv(RAW_PATH)\n",
+					"\n",
+					"print(f'Filas cargadas: {df_raw.count():,}')\n",
+					"print(f'Columnas: {len(df_raw.columns)}')\n",
+					"print(f'Particiones: {df_raw.rdd.getNumPartitions()}')"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"df_raw.printSchema()"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"df_raw.show(5, truncate=False, vertical=True)"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 2. Diagnóstico rápido de calidad"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Perfil de nulos por columna\n",
+					"null_profile = df_raw.select([\n",
+					"    F.count(F.when(F.col(c).isNull(), c)).alias(c)\n",
+					"    for c in df_raw.columns\n",
+					"])\n",
+					"print('Conteo de nulos por columna:')\n",
+					"null_profile.show(vertical=True)"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"total_rows = df_raw.count()\n",
+					"\n",
+					"null_counts = df_raw.select([\n",
+					"    (F.count(F.when(F.col(c).isNull(), c)) / total_rows * 100).alias(c)\n",
+					"    for c in df_raw.columns\n",
+					"])\n",
+					"\n",
+					"print('% de nulos por columna:')\n",
+					"null_counts.show(vertical=True)"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Duplicados exactos\n",
+					"dup_count = df_raw.count() - df_raw.distinct().count()\n",
+					"print(f'Filas duplicadas exactas: {dup_count}')"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Estadísticas descriptivas de columnas numéricas\n",
+					"numeric_cols = [c for c, t in df_raw.dtypes if t in ('int', 'bigint', 'double', 'float')]\n",
+					"print('Columnas numéricas:', numeric_cols)\n",
+					"\n",
+					"df_raw.select(numeric_cols).summary().show(vertical=True, truncate=False)"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 3. Aislamiento de registros anómalos → Quarantine\n",
+					"\n",
+					"Criterios de anomalía:\n",
+					"- Filas con `Price` nulo o <= 0\n",
+					"- `Ram_GB` nulo o <= 0\n",
+					"- `Weight_kg` nulo o <= 0\n",
+					"- `Inches` nulo o <= 0"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"anomaly_condition = (\n",
+					"    F.col('Price').isNull() | (F.col('Price') <= 0) |\n",
+					"    F.col('Ram_GB').isNull() | (F.col('Ram_GB') <= 0) |\n",
+					"    F.col('Weight_kg').isNull() | (F.col('Weight_kg') <= 0) |\n",
+					"    F.col('Inches').isNull() | (F.col('Inches') <= 0)\n",
+					")\n",
+					"\n",
+					"df_quarantine = df_raw.filter(anomaly_condition)\n",
+					"df_clean = df_raw.filter(~anomaly_condition)\n",
+					"\n",
+					"print(f'Registros en Quarantine: {df_quarantine.count():,}')\n",
+					"print(f'Registros Clean: {df_clean.count():,}')"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Inspeccionar qué se fue a quarantine\n",
+					"df_quarantine.show(20, truncate=False)"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 4. Estandarización de tipos de datos\n",
+					"\n",
+					"Correcciones aplicadas a AMBOS branches (clean y quarantine):\n",
+					"- `HHD` → renombrar a `HDD` (typo del scraping)\n",
+					"- Casts explícitos para garantizar tipos correctos"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"def standardize_columns(df):\n",
+					"    return (df\n",
+					"        .withColumnRenamed('HHD', 'HDD')\n",
+					"        .withColumn('Ram_GB', F.col('Ram_GB').cast('int'))\n",
+					"        .withColumn('Weight_kg', F.col('Weight_kg').cast('double'))\n",
+					"        .withColumn('Inches', F.col('Inches').cast('double'))\n",
+					"        .withColumn('TouchScreen', F.col('TouchScreen').cast('int'))\n",
+					"        .withColumn('Ips', F.col('Ips').cast('int'))\n",
+					"        .withColumn('Dedicated_Gpu', F.col('Dedicated_Gpu').cast('int'))\n",
+					"        .withColumn('Price', F.col('Price').cast('double'))\n",
+					"        .withColumn('SSD', F.col('SSD').cast('int'))\n",
+					"        .withColumn('Total_Storage_GB', F.col('Total_Storage_GB').cast('int'))\n",
+					"    )\n",
+					"\n",
+					"df_clean = standardize_columns(df_clean)\n",
+					"df_quarantine = standardize_columns(df_quarantine)\n",
+					"\n",
+					"print('Schema processed:')\n",
+					"df_clean.printSchema()"
+				]
+			},
+			{
+				"cell_type": "markdown",
+				"source": [
+					"---\n",
+					"## 5. Escritura a Processed (Parquet) y Quarantine (Parquet)"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"df_clean.write \\\n",
+					"    .mode('overwrite') \\\n",
+					"    .option('compression', 'snappy') \\\n",
+					"    .parquet(PROCESSED_PATH)\n",
+					"\n",
+					"df_quarantine.write \\\n",
+					"    .mode('overwrite') \\\n",
+					"    .option('compression', 'snappy') \\\n",
+					"    .parquet(QUARANTINE_PATH)\n",
+					"\n",
+					"print('✅ Datos escritos en processed/ y quarantine/')"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Verificación de escritura\n",
+					"df_check_processed = spark.read.parquet(PROCESSED_PATH)\n",
+					"df_check_quarantine = spark.read.parquet(QUARANTINE_PATH)\n",
+					"\n",
+					"print(f'Processed - Filas: {df_check_processed.count():,} | Columnas: {len(df_check_processed.columns)}')\n",
+					"print(f'Quarantine - Filas: {df_check_quarantine.count():,} | Columnas: {len(df_check_quarantine.columns)}')\n",
+					"\n",
+					"print('\\nColumnas en processed:', df_check_processed.columns)\n",
+					"df_check_processed.show(3, truncate=False, vertical=True)"
+				]
+			},
+			{
+				"cell_type": "code",
+				"source": [
+					"# Devolver conteo de filas en quarantine para la pipeline\n",
+					"quarantine_count = df_quarantine.count()\n",
+					"print(f'\\n📤 Exit value: {quarantine_count} filas en quarantine')\n",
+					"mssparkutils.notebook.exit(quarantine_count)"
+				]
+			}
+		]
+	}
+}
