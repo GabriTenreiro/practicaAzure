@@ -1,0 +1,110 @@
+{
+    "name": "laptop_data_pipeline",
+    "properties": {
+        "activities": [
+            {
+                "name": "01_ingesta_raw_a_processed",
+                "type": "SynapseNotebook",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebook": {
+                        "referenceName": "01_ingesta_raw_a_processed",
+                        "type": "NotebookReference"
+                    },
+                    "snapshot": true,
+                    "sparkPool": {
+                        "referenceName": "sparkpoollaptop",
+                        "type": "BigDataPoolReference"
+                    },
+                    "executorSize": "Small",
+                    "numExecutors": 3
+                }
+            },
+            {
+                "name": "02_processed_to_curated",
+                "type": "SynapseNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "01_ingesta_raw_a_processed",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "typeProperties": {
+                    "notebook": {
+                        "referenceName": "02_processed_to_curated",
+                        "type": "NotebookReference"
+                    },
+                    "snapshot": true,
+                    "sparkPool": {
+                        "referenceName": "sparkpoollaptop",
+                        "type": "BigDataPoolReference"
+                    },
+                    "executorSize": "Small",
+                    "numExecutors": 3
+                }
+            },
+            {
+                "name": "CheckQuarantine",
+                "type": "IfCondition",
+                "dependsOn": [
+                    {
+                        "activity": "01_ingesta_raw_a_processed",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "expression": {
+                        "value": "@greater(activity('01_ingesta_raw_a_processed').output.status.Output.result, 0)",
+                        "type": "Expression"
+                    },
+                    "ifTrueActivities": [
+                        {
+                            "name": "03_quarantine_to_rejected",
+                            "type": "SynapseNotebook",
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "typeProperties": {
+                                "notebook": {
+                                    "referenceName": "03_quarantine_to_rejected",
+                                    "type": "NotebookReference"
+                                },
+                                "snapshot": true,
+                                "sparkPool": {
+                                    "referenceName": "sparkpoollaptop",
+                                    "type": "BigDataPoolReference"
+                                },
+                                "executorSize": "Small",
+                                "numExecutors": 3
+                            }
+                        }
+                    ],
+                    "ifFalseActivities": []
+                }
+            }
+        ],
+        "annotations": []
+    }
+}
