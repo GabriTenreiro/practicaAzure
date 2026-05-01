@@ -7,4 +7,43 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data pipeline outputs (regenerable)
+datalake/processed/
+datalake/quarantine/
+datalake/curated/
+datalake/rejected/
+
+# Hadoop Windows binaries (download separately)
+hadoop/
+
+# OpenCode agent skills (local tooling)
+.agents/
+skills-lock.json
+
+# Root-level CSV duplicate (source of truth is datalake/raw/)
+laptop_scrap_data.csv
+
+# Secrets & env
+.env
+.env.*
+*.pem
+credentials.json
+*.key
+
+# Azure CLI cache
+.azure/
