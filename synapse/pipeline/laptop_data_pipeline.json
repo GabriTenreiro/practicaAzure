@@ -28,7 +28,7 @@
 					"conf": {
 						"spark.dynamicAllocation.enabled": "true",
 						"spark.dynamicAllocation.minExecutors": "1",
-						"spark.dynamicAllocation.maxExecutors": "2"
+						"spark.dynamicAllocation.maxExecutors": "1"
 					},
 					"numExecutors": 1
 				}
@@ -65,10 +65,10 @@
 					"executorSize": "Small",
 					"conf": {
 						"spark.dynamicAllocation.enabled": "true",
-						"spark.dynamicAllocation.minExecutors": "2",
-						"spark.dynamicAllocation.maxExecutors": "3"
+						"spark.dynamicAllocation.minExecutors": "1",
+						"spark.dynamicAllocation.maxExecutors": "1"
 					},
-					"numExecutors": 2
+					"numExecutors": 1
 				}
 			},
 			{
@@ -85,7 +85,7 @@
 				"userProperties": [],
 				"typeProperties": {
 					"expression": {
-						"value": "@greater(int(activity('01_ingesta_raw_a_processed').output.runOutput), 0)",
+						"value": "@greater(int(activity('01_ingesta_raw_a_processed').output.status.Output.result), 0)",
 						"type": "Expression"
 					},
 					"ifTrueActivities": [
@@ -115,9 +115,9 @@
 								"conf": {
 									"spark.dynamicAllocation.enabled": "true",
 									"spark.dynamicAllocation.minExecutors": "1",
-									"spark.dynamicAllocation.maxExecutors": "2"
+									"spark.dynamicAllocation.maxExecutors": "1"
 								},
-								"numExecutors": 2
+								"numExecutors": 1
 							}
 						}
 					]
@@ -161,10 +161,10 @@
 					"executorSize": "Small",
 					"conf": {
 						"spark.dynamicAllocation.enabled": "true",
-						"spark.dynamicAllocation.minExecutors": "2",
-						"spark.dynamicAllocation.maxExecutors": "3"
+						"spark.dynamicAllocation.minExecutors": "1",
+						"spark.dynamicAllocation.maxExecutors": "1"
 					},
-					"numExecutors": 2
+					"numExecutors": 1
 				}
 			},
 			{
@@ -199,10 +199,10 @@
 					"executorSize": "Small",
 					"conf": {
 						"spark.dynamicAllocation.enabled": "true",
-						"spark.dynamicAllocation.minExecutors": "2",
-						"spark.dynamicAllocation.maxExecutors": "3"
+						"spark.dynamicAllocation.minExecutors": "1",
+						"spark.dynamicAllocation.maxExecutors": "1"
 					},
-					"numExecutors": 2
+					"numExecutors": 1
 				}
 			}
 		],
