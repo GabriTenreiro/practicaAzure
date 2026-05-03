@@ -84,6 +84,8 @@ Estructura tipo medallón:
 | `01_ingesta_raw_a_processed.ipynb` | CSV → schema explícito → calidad → quarantine → processed |
 | `02_processed_to_curated.ipynb` | Deduplicar + columnas derivadas + partición por Company |
 | `03_quarantine_to_rejected.ipynb` | Separar irrecuperables → rejected, resto → quarantine |
+| `04_eda_y_visualizacion.ipynb` | EDA desde Curated: precio promedio, config estándar, market share |
+| `05_modelado_ml.ipynb` | Predicción de precios: LR, RF, GBT + feature importance |
 
 **Notas clave para notebooks Synapse:**
 - La variable `spark` ya viene inyectada — NO crear `SparkSession`
