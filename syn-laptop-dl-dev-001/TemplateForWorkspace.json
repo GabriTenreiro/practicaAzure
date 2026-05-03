@@ -1,0 +1,1749 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"workspaceName": {
+			"type": "string",
+			"metadata": "Nombre del área de trabajo",
+			"defaultValue": "syn-laptop-dl-dev-001"
+		},
+		"syn-laptop-dl-dev-001-WorkspaceDefaultSqlServer_connectionString": {
+			"type": "secureString",
+			"metadata": "Cadena protegida para \"connectionString\"de \"syn-laptop-dl-dev-001-WorkspaceDefaultSqlServer\"",
+			"defaultValue": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=tcp:syn-laptop-dl-dev-001.sql.azuresynapse.net,1433;Initial Catalog=@{linkedService().DBName}"
+		},
+		"syn-laptop-dl-dev-001-WorkspaceDefaultStorage_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://stgabritenreiroprueba.dfs.core.windows.net"
+		}
+	},
+	"variables": {
+		"workspaceId": "[concat('Microsoft.Synapse/workspaces/', parameters('workspaceName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('workspaceName'), '/laptop_data_pipeline')]",
+			"type": "Microsoft.Synapse/workspaces/pipelines",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"activities": [
+					{
+						"name": "01_ingesta_raw_a_processed",
+						"type": "SynapseNotebook",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebook": {
+								"referenceName": "01_ingesta_raw_a_processed",
+								"type": "NotebookReference"
+							},
+							"snapshot": true,
+							"sparkPool": {
+								"referenceName": "sparkpoollaptop",
+								"type": "BigDataPoolReference"
+							},
+							"executorSize": "Small",
+							"conf": {
+								"spark.dynamicAllocation.enabled": null,
+								"spark.dynamicAllocation.minExecutors": null,
+								"spark.dynamicAllocation.maxExecutors": null
+							},
+							"numExecutors": null
+						}
+					},
+					{
+						"name": "02_processed_to_curated",
+						"type": "SynapseNotebook",
+						"dependsOn": [
+							{
+								"activity": "01_ingesta_raw_a_processed",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"notebook": {
+								"referenceName": "02_processed_to_curated",
+								"type": "NotebookReference"
+							},
+							"snapshot": true,
+							"sparkPool": {
+								"referenceName": "sparkpoollaptop",
+								"type": "BigDataPoolReference"
+							},
+							"executorSize": "Small",
+							"conf": {
+								"spark.dynamicAllocation.enabled": null,
+								"spark.dynamicAllocation.minExecutors": null,
+								"spark.dynamicAllocation.maxExecutors": null
+							},
+							"numExecutors": null
+						}
+					},
+					{
+						"name": "CheckQuarantine",
+						"type": "IfCondition",
+						"dependsOn": [
+							{
+								"activity": "01_ingesta_raw_a_processed",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"expression": {
+								"value": "@greater(activity('01_ingesta_raw_a_processed').output.status.Output.result, 0)",
+								"type": "Expression"
+							},
+							"ifTrueActivities": [
+								{
+									"name": "03_quarantine_to_rejected",
+									"type": "SynapseNotebook",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"notebook": {
+											"referenceName": "03_quarantine_to_rejected",
+											"type": "NotebookReference"
+										},
+										"snapshot": true,
+										"sparkPool": {
+											"referenceName": "sparkpoollaptop",
+											"type": "BigDataPoolReference"
+										},
+										"executorSize": "Small",
+										"conf": {
+											"spark.dynamicAllocation.enabled": null,
+											"spark.dynamicAllocation.minExecutors": null,
+											"spark.dynamicAllocation.maxExecutors": null
+										},
+										"numExecutors": null
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": []
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/notebooks/01_ingesta_raw_a_processed')]",
+				"[concat(variables('workspaceId'), '/bigDataPools/sparkpoollaptop')]",
+				"[concat(variables('workspaceId'), '/notebooks/02_processed_to_curated')]",
+				"[concat(variables('workspaceId'), '/notebooks/03_quarantine_to_rejected')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/syn-laptop-dl-dev-001-WorkspaceDefaultSqlServer')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"parameters": {
+					"DBName": {
+						"type": "String"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlDW",
+				"typeProperties": {
+					"connectionString": "[parameters('syn-laptop-dl-dev-001-WorkspaceDefaultSqlServer_connectionString')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/syn-laptop-dl-dev-001-WorkspaceDefaultStorage')]",
+			"type": "Microsoft.Synapse/workspaces/linkedServices",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('syn-laptop-dl-dev-001-WorkspaceDefaultStorage_properties_typeProperties_url')]"
+				},
+				"connectVia": {
+					"referenceName": "AutoResolveIntegrationRuntime",
+					"type": "IntegrationRuntimeReference"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/integrationRuntimes/AutoResolveIntegrationRuntime')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/AutoResolveIntegrationRuntime')]",
+			"type": "Microsoft.Synapse/workspaces/integrationRuntimes",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "Managed",
+				"typeProperties": {
+					"computeProperties": {
+						"location": "AutoResolve",
+						"dataFlowProperties": {
+							"computeType": "General",
+							"coreCount": 8,
+							"timeToLive": 0
+						}
+					}
+				},
+				"managedVirtualNetwork": {
+					"type": "ManagedVirtualNetworkReference",
+					"referenceName": "default"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/managedVirtualNetworks/default')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/WorkspaceSystemIdentity')]",
+			"type": "Microsoft.Synapse/workspaces/credentials",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"type": "ManagedIdentity",
+				"typeProperties": {}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/default')]",
+			"type": "Microsoft.Synapse/workspaces/managedVirtualNetworks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/01_ingesta_raw_a_processed')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"nbformat": 4,
+				"nbformat_minor": 2,
+				"sessionProperties": {
+					"driverMemory": "28g",
+					"driverCores": 4,
+					"executorMemory": "28g",
+					"executorCores": 4,
+					"numExecutors": 2,
+					"conf": {
+						"spark.dynamicAllocation.enabled": "false",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "2",
+						"spark.autotune.trackingId": "82c99cfa-fcc0-4ed8-b61c-227b788a1249"
+					}
+				},
+				"metadata": {
+					"saveOutput": true,
+					"enableDebugMode": false,
+					"kernelspec": {
+						"name": "synapse_pyspark",
+						"display_name": "Synapse PySpark"
+					},
+					"language_info": {
+						"name": "python"
+					},
+					"sessionKeepAliveTimeout": 30
+				},
+				"cells": [
+					{
+						"cell_type": "markdown",
+						"source": [
+							"# Fase 1: Ingesta con PySpark en Azure Synapse\n",
+							"## Carga desde Raw → Calidad → Quarantine → Processed\n",
+							"\n",
+							"**Dataset:** `laptop_scrap_data.csv`  \n",
+							"**Origen:** `abfss://raw@stgabritenreiroprueba.dfs.core.windows.net/`  \n",
+							"**Destinos:** `abfss://processed@...` (datos limpios) y `abfss://quarantine@...` (registros anómalos)\n",
+							"\n",
+							"> **Nota:** En Synapse, la variable `spark` ya viene inyectada. No es necesario crear SparkSession."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"from pyspark.sql import functions as F\n",
+							"from pyspark.sql.types import *\n",
+							"from pyspark.sql.window import Window\n",
+							"\n",
+							"# Storage account (hardcoded default, override via pipeline parameters if needed)\n",
+							"STORAGE_ACCOUNT = 'stgabritenreiroprueba'\n",
+							"\n",
+							"# Try to override with pipeline parameter\n",
+							"try:\n",
+							"    from notebookutils import mssparkutils\n",
+							"    param = mssparkutils.notebook.getParameter('storage_account')\n",
+							"    if param and param.strip():\n",
+							"        STORAGE_ACCOUNT = param.strip()\n",
+							"except Exception:\n",
+							"    pass\n",
+							"\n",
+							"RAW_PATH = f'abfss://raw@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptop_scrap_data.csv'\n",
+							"PROCESSED_PATH = f'abfss://processed@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+							"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+							"\n",
+							"assert RAW_PATH and PROCESSED_PATH and QUARANTINE_PATH, 'Paths cannot be empty'\n",
+							"\n",
+							"print(f'Storage: {STORAGE_ACCOUNT}')\n",
+							"print(f'Raw: {RAW_PATH}')\n",
+							"print(f'Processed: {PROCESSED_PATH}')\n",
+							"print(f'Quarantine: {QUARANTINE_PATH}')\n",
+							"print(f'Spark version: {spark.version}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 1. Lectura del dataset RAW con schema explícito\n",
+							"\n",
+							"Usamos schema explícito en lugar de inferSchema para:\n",
+							"- Evitar inferencia incorrecta en producción\n",
+							"- Garantizar tipos consistentes entre ejecuciones\n",
+							"- Mejorar rendimiento (no necesita escanear datos para inferir)"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Schema explícito para evitar inferSchema=true (más fiable en producción)\n",
+							"laptop_schema = StructType([\n",
+							"    StructField('Company', StringType(), True),\n",
+							"    StructField('TypeName', StringType(), True),\n",
+							"    StructField('Inches', DoubleType(), True),\n",
+							"    StructField('ScreenResolution', StringType(), True),\n",
+							"    StructField('Cpu', StringType(), True),\n",
+							"    StructField('Gpu', StringType(), True),\n",
+							"    StructField('OpSys', StringType(), True),\n",
+							"    StructField('TouchScreen', IntegerType(), True),\n",
+							"    StructField('Ips', IntegerType(), True),\n",
+							"    StructField('X_res', IntegerType(), True),\n",
+							"    StructField('Y_res', IntegerType(), True),\n",
+							"    StructField('ppi', DoubleType(), True),\n",
+							"    StructField('Dedicated_Gpu', IntegerType(), True),\n",
+							"    StructField('Ram_GB', IntegerType(), True),\n",
+							"    StructField('Weight_kg', DoubleType(), True),\n",
+							"    StructField('SSD', IntegerType(), True),\n",
+							"    StructField('HHD', IntegerType(), True),\n",
+							"    StructField('Storage_Type', StringType(), True),\n",
+							"    StructField('Total_Storage_GB', IntegerType(), True),\n",
+							"    StructField('Storage_Category', StringType(), True),\n",
+							"    StructField('Price', DoubleType(), True),\n",
+							"])\n",
+							"\n",
+							"df_raw = spark.read \\\n",
+							"    .option('header', 'true') \\\n",
+							"    .option('quote', '\"') \\\n",
+							"    .option('escape', '\"') \\\n",
+							"    .option('treatEmptyValuesAsNulls', 'true') \\\n",
+							"    .schema(laptop_schema) \\\n",
+							"    .csv(RAW_PATH)\n",
+							"\n",
+							"# Cacheamos df_raw para evitar relecturas del CSV en cada operación de diagnóstico\n",
+							"# Sin cache, cada count() o show() volvería a leer el archivo completo\n",
+							"df_raw.cache()\n",
+							"\n",
+							"raw_count = df_raw.count()\n",
+							"print(f'Filas cargadas: {raw_count:,}')\n",
+							"print(f'Columnas: {len(df_raw.columns)}')\n",
+							"print(f'Particiones: {df_raw.rdd.getNumPartitions()}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_raw.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_raw.show(5, truncate=False, vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 2. Diagnóstico rápido de calidad\n",
+							"\n",
+							"Calculamos todos los diagnósticos en un solo pase para minimizar acciones Spark.\n",
+							"Como df_raw está cacheado, las acciones posteriores serán rápidas (lectura desde memoria)."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Perfil de nulos por columna — un solo pase gracias al cache\n",
+							"null_profile = df_raw.select([\n",
+							"    F.count(F.when(F.col(c).isNull(), c)).alias(c)\n",
+							"    for c in df_raw.columns\n",
+							"])\n",
+							"print('Conteo de nulos por columna:')\n",
+							"null_profile.show(vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# % de nulos por columna — reutiliza el conteo total del cache\n",
+							"null_counts = df_raw.select([\n",
+							"    (F.count(F.when(F.col(c).isNull(), c)) / raw_count * 100).alias(c)\n",
+							"    for c in df_raw.columns\n",
+							"])\n",
+							"\n",
+							"print('% de nulos por columna:')\n",
+							"null_counts.show(vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Duplicados exactos\n",
+							"dup_count = raw_count - df_raw.distinct().count()\n",
+							"print(f'Filas duplicadas exactas: {dup_count}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Estadísticas descriptivas de columnas numéricas\n",
+							"numeric_cols = [c for c, t in df_raw.dtypes if t in ('int', 'bigint', 'double', 'float')]\n",
+							"print('Columnas numéricas:', numeric_cols)\n",
+							"\n",
+							"df_raw.select(numeric_cols).summary().show(vertical=True, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 3. Aislamiento de registros anómalos → Quarantine\n",
+							"\n",
+							"Criterios de anomalía:\n",
+							"- Filas con `Price` nulo o <= 0\n",
+							"- `Ram_GB` nulo o <= 0\n",
+							"- `Weight_kg` nulo o <= 0\n",
+							"- `Inches` nulo o <= 0"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"anomaly_condition = (\n",
+							"    F.col('Price').isNull() | (F.col('Price') <= 0) |\n",
+							"    F.col('Ram_GB').isNull() | (F.col('Ram_GB') <= 0) |\n",
+							"    F.col('Weight_kg').isNull() | (F.col('Weight_kg') <= 0) |\n",
+							"    F.col('Inches').isNull() | (F.col('Inches') <= 0)\n",
+							")\n",
+							"\n",
+							"# df_raw está cacheado, así que ambos filters leen desde memoria (no re-lee CSV)\n",
+							"df_quarantine = df_raw.filter(anomaly_condition)\n",
+							"df_clean = df_raw.filter(~anomaly_condition)\n",
+							"\n",
+							"quarantine_count = df_quarantine.count()\n",
+							"clean_count = df_clean.count()\n",
+							"\n",
+							"print(f'Registros en Quarantine: {quarantine_count:,}')\n",
+							"print(f'Registros Clean: {clean_count:,}')\n",
+							"\n",
+							"# Liberamos memoria de df_raw ya que tenemos los splits materializados\n",
+							"df_raw.unpersist()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Inspeccionar qué se fue a quarantine\n",
+							"df_quarantine.show(20, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 4. Estandarización de tipos de datos\n",
+							"\n",
+							"Correcciones aplicadas a AMBOS branches (clean y quarantine):\n",
+							"- `HHD` → renombrar a `HDD` (typo del scraping)\n",
+							"- Casts explícitos para garantizar tipos correctos\n",
+							"\n",
+							"Es CRÍTICO estandarizar ambos branches para mantener consistencia de schema\n",
+							"entre processed, quarantine y rejected."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"def standardize_columns(df):\n",
+							"    \"\"\"Aplica correcciones de schema a un DataFrame.\n",
+							"    \n",
+							"    Se aplica a AMBOS branches (clean y quarantine) para garantizar\n",
+							"    que todos los datos del pipeline tengan el mismo schema.\n",
+							"    \"\"\"\n",
+							"    return (df\n",
+							"        .withColumnRenamed('HHD', 'HDD')\n",
+							"        .withColumn('Ram_GB', F.col('Ram_GB').cast('int'))\n",
+							"        .withColumn('Weight_kg', F.col('Weight_kg').cast('double'))\n",
+							"        .withColumn('Inches', F.col('Inches').cast('double'))\n",
+							"        .withColumn('TouchScreen', F.col('TouchScreen').cast('int'))\n",
+							"        .withColumn('Ips', F.col('Ips').cast('int'))\n",
+							"        .withColumn('Dedicated_Gpu', F.col('Dedicated_Gpu').cast('int'))\n",
+							"        .withColumn('Price', F.col('Price').cast('double'))\n",
+							"        .withColumn('SSD', F.col('SSD').cast('int'))\n",
+							"        .withColumn('Total_Storage_GB', F.col('Total_Storage_GB').cast('int'))\n",
+							"    )\n",
+							"\n",
+							"# Estandarizar AMBOS branches para consistencia de schema\n",
+							"df_clean = standardize_columns(df_clean)\n",
+							"df_quarantine = standardize_columns(df_quarantine)\n",
+							"\n",
+							"print('Schema processed:')\n",
+							"df_clean.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 5. Escritura a Processed (Parquet) y Quarantine (Parquet)"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Escritura de datos limpios a processed\n",
+							"df_clean.write \\\n",
+							"    .mode('overwrite') \\\n",
+							"    .option('compression', 'snappy') \\\n",
+							"    .parquet(PROCESSED_PATH)\n",
+							"\n",
+							"# Escritura de datos anómalos a quarantine\n",
+							"df_quarantine.write \\\n",
+							"    .mode('overwrite') \\\n",
+							"    .option('compression', 'snappy') \\\n",
+							"    .parquet(QUARANTINE_PATH)\n",
+							"\n",
+							"print('✅ Datos escritos en processed/ y quarantine/')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Verificación de escritura\n",
+							"df_check_processed = spark.read.parquet(PROCESSED_PATH)\n",
+							"df_check_quarantine = spark.read.parquet(QUARANTINE_PATH)\n",
+							"\n",
+							"print(f'Processed - Filas: {df_check_processed.count():,} | Columnas: {len(df_check_processed.columns)}')\n",
+							"print(f'Quarantine - Filas: {df_check_quarantine.count():,} | Columnas: {len(df_check_quarantine.columns)}')\n",
+							"\n",
+							"print('\\nColumnas en processed:', df_check_processed.columns)\n",
+							"df_check_processed.show(3, truncate=False, vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Devolver conteo de filas en quarantine para la pipeline (IfCondition)\n",
+							"# Este valor se lee en la pipeline como: activity('01_...').output.runOutput\n",
+							"print(f'\\n📤 Exit value: {quarantine_count} filas en quarantine')\n",
+							"mssparkutils.notebook.exit(quarantine_count)"
+						],
+						"outputs": [],
+						"execution_count": null
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/02_processed_to_curated')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"nbformat": 4,
+				"nbformat_minor": 2,
+				"sessionProperties": {
+					"driverMemory": "28g",
+					"driverCores": 4,
+					"executorMemory": "28g",
+					"executorCores": 4,
+					"numExecutors": 2,
+					"conf": {
+						"spark.dynamicAllocation.enabled": "false",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "2",
+						"spark.autotune.trackingId": "d2ec18d8-71c4-41a5-85d9-ef0da7180b21"
+					}
+				},
+				"metadata": {
+					"saveOutput": true,
+					"enableDebugMode": false,
+					"kernelspec": {
+						"name": "synapse_pyspark",
+						"display_name": "Synapse PySpark"
+					},
+					"language_info": {
+						"name": "python"
+					},
+					"sessionKeepAliveTimeout": 30
+				},
+				"cells": [
+					{
+						"cell_type": "markdown",
+						"source": [
+							"# Fase 2: Processed → Curated\n",
+							"## Deduplicación, columnas derivadas y particionamiento\n",
+							"\n",
+							"**Origen:** `abfss://processed@stgabritenreiroprueba.dfs.core.windows.net/`  \n",
+							"**Destino:** `abfss://curated@stgabritenreiroprueba.dfs.core.windows.net/` (particionado por Company)"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"from pyspark.sql import functions as F\n",
+							"from pyspark.sql.window import Window\n",
+							"\n",
+							"# Storage account (hardcoded default, override via pipeline parameters if needed)\n",
+							"STORAGE_ACCOUNT = 'stgabritenreiroprueba'\n",
+							"\n",
+							"# Try to override with pipeline parameter\n",
+							"try:\n",
+							"    from notebookutils import mssparkutils\n",
+							"    param = mssparkutils.notebook.getParameter('storage_account')\n",
+							"    if param and param.strip():\n",
+							"        STORAGE_ACCOUNT = param.strip()\n",
+							"except Exception:\n",
+							"    pass\n",
+							"\n",
+							"PROCESSED_PATH = f'abfss://processed@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+							"CURATED_PATH = f'abfss://curated@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+							"\n",
+							"assert PROCESSED_PATH and CURATED_PATH, 'Paths cannot be empty'\n",
+							"\n",
+							"print(f'Storage: {STORAGE_ACCOUNT}')\n",
+							"print(f'Processed: {PROCESSED_PATH}')\n",
+							"print(f'Curated: {CURATED_PATH}')\n",
+							"print(f'Spark version: {spark.version}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 1. Lectura de datos procesados"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_processed = spark.read.parquet(PROCESSED_PATH)\n",
+							"\n",
+							"# Cacheamos para evitar relecturas de Parquet en cada diagnóstico\n",
+							"df_processed.cache()\n",
+							"\n",
+							"processed_count = df_processed.count()\n",
+							"print(f'Filas cargadas: {processed_count:,}')\n",
+							"print(f'Columnas: {len(df_processed.columns)}')\n",
+							"df_processed.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_processed.show(3, truncate=False, vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 2. Eliminación de duplicados exactos"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"dup_count = processed_count - df_processed.distinct().count()\n",
+							"print(f'Duplicados exactos detectados: {dup_count}')\n",
+							"\n",
+							"df_deduped = df_processed.dropDuplicates()\n",
+							"df_deduped.cache()\n",
+							"deduped_count = df_deduped.count()\n",
+							"print(f'Filas tras deduplicar: {deduped_count:,}')\n",
+							"\n",
+							"# Liberamos memoria de df_processed ya que usamos df_deduped\n",
+							"df_processed.unpersist()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 3. Feature Engineering — Columnas derivadas"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_curated = (df_deduped\n",
+							"    # Métricas de valor\n",
+							"    .withColumn('Price_per_RAM_GB',\n",
+							"        F.round(F.col('Price') / F.col('Ram_GB'), 2))\n",
+							"    .withColumn('Price_per_Storage_GB',\n",
+							"        F.round(F.col('Price') / F.col('Total_Storage_GB'), 4))\n",
+							"    # Extracción de marcas\n",
+							"    .withColumn('CPU_Brand',\n",
+							"        F.when(F.col('Cpu').rlike('(?i)intel'), 'Intel')\n",
+							"         .when(F.col('Cpu').rlike('(?i)amd'), 'AMD')\n",
+							"         .when(F.col('Cpu').rlike('(?i)apple'), 'Apple')\n",
+							"         .otherwise('Other'))\n",
+							"    .withColumn('GPU_Brand',\n",
+							"        F.when(F.col('Gpu').rlike('(?i)nvidia'), 'NVIDIA')\n",
+							"         .when(F.col('Gpu').rlike('(?i)amd'), 'AMD')\n",
+							"         .when(F.col('Gpu').rlike('(?i)intel'), 'Intel')\n",
+							"         .otherwise('Other'))\n",
+							"    # Flag GPU dedicada\n",
+							"    .withColumn('Has_Dedicated_GPU',\n",
+							"        (F.col('Dedicated_Gpu') == 1).cast('int'))\n",
+							"    # Categoría de pantalla\n",
+							"    .withColumn('Screen_Category',\n",
+							"        F.when(F.col('Inches') < 13, 'Compact (<13\")')\n",
+							"         .when(F.col('Inches') < 15, 'Standard (13-15\")')\n",
+							"         .when(F.col('Inches') < 17, 'Large (15-17\")')\n",
+							"         .otherwise('XL (>17\")'))\n",
+							")\n",
+							"\n",
+							"print('Schema curated:')\n",
+							"df_curated.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Verificar nuevas columnas\n",
+							"df_curated.select(\n",
+							"    'Company', 'TypeName', 'Price', 'Ram_GB', 'Total_Storage_GB',\n",
+							"    'Price_per_RAM_GB', 'Price_per_Storage_GB',\n",
+							"    'CPU_Brand', 'GPU_Brand', 'Has_Dedicated_GPU',\n",
+							"    'Inches', 'Screen_Category'\n",
+							").show(10, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 4. Escritura a Curated (particionado por Company)"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_curated.write \\\n",
+							"    .mode('overwrite') \\\n",
+							"    .option('compression', 'snappy') \\\n",
+							"    .partitionBy('Company') \\\n",
+							"    .parquet(CURATED_PATH)\n",
+							"\n",
+							"# Liberamos memoria de df_deduped tras escritura\n",
+							"df_deduped.unpersist()\n",
+							"\n",
+							"print('✅ Datos escritos en curated/')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Verificación\n",
+							"df_check = spark.read.parquet(CURATED_PATH)\n",
+							"print(f'Curated - Filas: {df_check.count():,} | Columnas: {len(df_check.columns)}')\n",
+							"print(f'\\nColumnas: {df_check.columns}')\n",
+							"\n",
+							"# Verificar particionamiento\n",
+							"print('\\nDistribución por Company:')\n",
+							"df_check.groupBy('Company').count().orderBy(F.desc('count')).show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/03_quarantine_to_rejected')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"nbformat": 4,
+				"nbformat_minor": 2,
+				"sessionProperties": {
+					"driverMemory": "28g",
+					"driverCores": 4,
+					"executorMemory": "28g",
+					"executorCores": 4,
+					"numExecutors": 2,
+					"conf": {
+						"spark.dynamicAllocation.enabled": "false",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "2",
+						"spark.autotune.trackingId": "f8e14bfd-3c8b-483f-b01b-dca8ee36a80e"
+					}
+				},
+				"metadata": {
+					"saveOutput": true,
+					"enableDebugMode": false,
+					"kernelspec": {
+						"name": "synapse_pyspark",
+						"display_name": "Synapse PySpark"
+					},
+					"language_info": {
+						"name": "python"
+					},
+					"sessionKeepAliveTimeout": 30
+				},
+				"cells": [
+					{
+						"cell_type": "markdown",
+						"source": [
+							"# Fase 3: Quarantine → Rejected\n",
+							"## Separación de registros irrecuperables vs revisables\n",
+							"\n",
+							"**Origen:** `abfss://quarantine@stgabritenreiroprueba.dfs.core.windows.net/`  \n",
+							"**Destinos:**\n",
+							"- `abfss://rejected@...` — Filas 100% NULL (irrecuperables)\n",
+							"- `abfss://quarantine@...` — Reescrito solo con filas recuperables"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"from pyspark.sql import functions as F\n",
+							"\n",
+							"# Storage account (hardcoded default, override via pipeline parameters if needed)\n",
+							"STORAGE_ACCOUNT = 'stgabritenreiroprueba'\n",
+							"\n",
+							"# Try to override with pipeline parameter\n",
+							"try:\n",
+							"    from notebookutils import mssparkutils\n",
+							"    param = mssparkutils.notebook.getParameter('storage_account')\n",
+							"    if param and param.strip():\n",
+							"        STORAGE_ACCOUNT = param.strip()\n",
+							"except Exception:\n",
+							"    pass\n",
+							"\n",
+							"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+							"REJECTED_PATH = f'abfss://rejected@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+							"\n",
+							"assert QUARANTINE_PATH and REJECTED_PATH, 'Paths cannot be empty'\n",
+							"\n",
+							"print(f'Storage: {STORAGE_ACCOUNT}')\n",
+							"print(f'Quarantine: {QUARANTINE_PATH}')\n",
+							"print(f'Rejected: {REJECTED_PATH}')\n",
+							"print(f'Spark version: {spark.version}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 1. Lectura de quarantine"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_quarantine = spark.read.parquet(QUARANTINE_PATH)\n",
+							"\n",
+							"# Con ~14 filas no necesitamos cache, pero lo incluimos como buena práctica\n",
+							"df_quarantine.cache()\n",
+							"\n",
+							"quarantine_count = df_quarantine.count()\n",
+							"print(f'Filas en quarantine: {quarantine_count:,}')\n",
+							"df_quarantine.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"df_quarantine.show(20, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 2. Clasificación: Rejected vs Quarantine recuperable\n",
+							"\n",
+							"- **Rejected**: filas donde TODAS las columnas son NULL (datos completamente perdidos)\n",
+							"- **Quarantine keep**: filas con al menos algún dato pero que fallaron reglas de calidad"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Contar nulos por fila — cada isNull() es una operación ligera\n",
+							"total_cols = len(df_quarantine.columns)\n",
+							"\n",
+							"null_count_expr = sum(F.col(c).isNull().cast('int') for c in df_quarantine.columns)\n",
+							"\n",
+							"df_classified = df_quarantine.withColumn('null_count', null_count_expr)\n",
+							"\n",
+							"df_rejected = df_classified.filter(F.col('null_count') == total_cols)\n",
+							"df_quarantine_keep = df_classified.filter(F.col('null_count') < total_cols)\n",
+							"\n",
+							"rejected_count = df_rejected.count()\n",
+							"quarantine_keep_count = df_quarantine_keep.count()\n",
+							"\n",
+							"print(f'Registros Rejected (100% NULL): {rejected_count:,}')\n",
+							"print(f'Registros Quarantine recuperables: {quarantine_keep_count:,}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Ver rejected\n",
+							"print('=== REJECTED (filas irrecuperables) ===')\n",
+							"df_rejected.show(10, truncate=False)\n",
+							"\n",
+							"print('\\n=== QUARANTINE KEEP (filas recuperables) ===')\n",
+							"df_quarantine_keep.show(20, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 3. Escritura a Rejected y reescritura de Quarantine"
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Escribir rejected (sin la columna auxiliar null_count)\n",
+							"df_rejected.drop('null_count').write \\\n",
+							"    .mode('overwrite') \\\n",
+							"    .option('compression', 'snappy') \\\n",
+							"    .parquet(REJECTED_PATH)\n",
+							"\n",
+							"# Reescribir quarantine solo con recuperables\n",
+							"df_quarantine_keep.drop('null_count').write \\\n",
+							"    .mode('overwrite') \\\n",
+							"    .option('compression', 'snappy') \\\n",
+							"    .parquet(QUARANTINE_PATH)\n",
+							"\n",
+							"print('✅ Datos escritos en rejected/ y quarantine/ actualizado')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Verificación final\n",
+							"df_check_rejected = spark.read.parquet(REJECTED_PATH)\n",
+							"df_check_quarantine = spark.read.parquet(QUARANTINE_PATH)\n",
+							"\n",
+							"print(f'Rejected - Filas: {df_check_rejected.count():,}')\n",
+							"print(f'Quarantine (recuperables) - Filas: {df_check_quarantine.count():,}')\n",
+							"\n",
+							"print('\\n📊 Resumen final del pipeline:')\n",
+							"print(f'  Raw total:        1,563')\n",
+							"print(f'  Processed:        1,549')\n",
+							"print(f'  Quarantine:       {df_check_quarantine.count():,}')\n",
+							"print(f'  Rejected:         {df_check_rejected.count():,}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/04_eda_y_visualizacion')]",
+			"type": "Microsoft.Synapse/workspaces/notebooks",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"nbformat": 4,
+				"nbformat_minor": 2,
+				"sessionProperties": {
+					"driverMemory": "28g",
+					"driverCores": 4,
+					"executorMemory": "28g",
+					"executorCores": 4,
+					"numExecutors": 2,
+					"conf": {
+						"spark.dynamicAllocation.enabled": "false",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "2",
+						"spark.autotune.trackingId": "fc43ae9f-f4c4-4e59-a772-cdabcd772c66"
+					}
+				},
+				"metadata": {
+					"saveOutput": true,
+					"enableDebugMode": false,
+					"kernelspec": {
+						"name": "synapse_pyspark",
+						"display_name": "Synapse PySpark"
+					},
+					"language_info": {
+						"name": "python"
+					},
+					"sessionKeepAliveTimeout": 30
+				},
+				"cells": [
+					{
+						"cell_type": "markdown",
+						"source": [
+							"# Fase 4: EDA y Visualización — Insights del Mercado de Laptops\n",
+							"## Análisis exploratorio desde la capa Curated\n",
+							"\n",
+							"**Origen:** `abfss://curated@stgabritenreiroprueba.dfs.core.windows.net/`  \n",
+							"**Objetivo:** Extraer insights de negocio sobre precios, configuraciones estándar y concentración del mercado."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"from pyspark.sql import functions as F\n",
+							"from pyspark.sql.window import Window\n",
+							"\n",
+							"# Storage account (hardcoded default, override via pipeline parameters if needed)\n",
+							"STORAGE_ACCOUNT = 'stgabritenreiroprueba'\n",
+							"\n",
+							"# Try to override with pipeline parameter\n",
+							"try:\n",
+							"    from notebookutils import mssparkutils\n",
+							"    param = mssparkutils.notebook.getParameter('storage_account')\n",
+							"    if param and param.strip():\n",
+							"        STORAGE_ACCOUNT = param.strip()\n",
+							"except Exception:\n",
+							"    pass\n",
+							"\n",
+							"CURATED_PATH = f'abfss://curated@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+							"\n",
+							"assert CURATED_PATH, 'Path cannot be empty'\n",
+							"\n",
+							"print(f'Storage: {STORAGE_ACCOUNT}')\n",
+							"print(f'Curated: {CURATED_PATH}')\n",
+							"print(f'Spark version: {spark.version}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## 1. Carga de datos Curated\n",
+							"\n",
+							"Leemos los datos ya limpios, deduplicados y enriquecidos con las columnas derivadas\n",
+							"(Price_per_RAM_GB, Price_per_Storage_GB, CPU_Brand, GPU_Brand, Has_Dedicated_GPU, Screen_Category).\n",
+							"Estos datos son la fuente de verdad para el análisis de negocio."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Lectura del parquet particionado por Company\n",
+							"df_curated = spark.read.parquet(CURATED_PATH)\n",
+							"\n",
+							"total_rows = df_curated.count()\n",
+							"total_cols = len(df_curated.columns)\n",
+							"\n",
+							"print(f'Filas cargadas: {total_rows:,}')\n",
+							"print(f'Columnas: {total_cols}')\n",
+							"df_curated.printSchema()"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Vista rápida de los primeros registros para validar la carga\n",
+							"df_curated.show(3, truncate=False, vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"# SECCIÓN 1: Precio Promedio del Mercado (Market Average Price)\n",
+							"\n",
+							"**Objetivo:** Entender la distribución de precios del mercado, identificar rangos,\n",
+							"outliers y cómo varía el precio según las características del producto.\n",
+							"\n",
+							"**Por qué importa:** Permite posicionar productos, detectar segmentos de precio\n",
+							"y entender la relación entre especificaciones y precio."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Estadísticas descriptivas completas de Price\n",
+							"# Esto nos da la visión global del mercado: precio medio, mediana, dispersión\n",
+							"price_stats = df_curated.select(\n",
+							"    F.count('Price').alias('Total_Con_Price'),\n",
+							"    F.round(F.mean('Price'), 2).alias('Precio_Medio'),\n",
+							"    F.round(F.expr('percentile_approx(Price, 0.5)'), 2).alias('Precio_Mediana'),\n",
+							"    F.min('Price').alias('Precio_Minimo'),\n",
+							"    F.max('Price').alias('Precio_Maximo'),\n",
+							"    F.round(F.stddev('Price'), 2).alias('Precio_Desv_Estandar'),\n",
+							"    F.round(F.expr('percentile_approx(Price, 0.25)'), 2).alias('Q1_25pct'),\n",
+							"    F.round(F.expr('percentile_approx(Price, 0.75)'), 2).alias('Q3_75pct')\n",
+							").show(vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Segmentación por rangos de precio para entender la estructura del mercado\n",
+							"# Esto revela si el mercado está concentrado en gama baja, media o alta\n",
+							"df_price_segments = df_curated.withColumn(\n",
+							"    'Rango_Precio',\n",
+							"    F.when(F.col('Price') < 500, 'Budget (<500€)')\n",
+							"     .when(F.col('Price') < 1000, 'Mid-Range (500-1000€)')\n",
+							"     .when(F.col('Price') < 1500, 'Premium (1000-1500€)')\n",
+							"     .when(F.col('Price') < 2000, 'High-End (1500-2000€)')\n",
+							"     .otherwise('Ultra-Premium (>2000€)')\n",
+							")\n",
+							"\n",
+							"df_price_segments.groupBy('Rango_Precio') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Medio'),\n",
+							"        F.round(F.count('*') / total_rows * 100, 1).alias('%_del_Mercado')\n",
+							"    ) \\\n",
+							"    .orderBy('Cantidad', ascending=False) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Precio promedio por Company — identifica qué marcas son más caras/baratas\n",
+							"# Útil para entender el posicionamiento de cada fabricante\n",
+							"df_curated.groupBy('Company') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio'),\n",
+							"        F.round(F.min('Price'), 2).alias('Precio_Min'),\n",
+							"        F.round(F.max('Price'), 2).alias('Precio_Max')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Precio_Promedio')) \\\n",
+							"    .show(20, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Precio promedio por marca de CPU — Intel vs AMD vs Apple\n",
+							"# Revela si hay un premium de precio asociado a la marca del procesador\n",
+							"df_curated.groupBy('CPU_Brand') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio'),\n",
+							"        F.round(F.stddev('Price'), 2).alias('Desv_Estandar')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Precio_Promedio')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Precio promedio por marca de GPU — NVIDIA vs AMD vs Intel\n",
+							"# Las laptops con GPU dedicada (NVIDIA) suelen tener precios más altos\n",
+							"df_curated.groupBy('GPU_Brand') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Precio_Promedio')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Precio promedio por categoría de pantalla\n",
+							"# Esperamos que pantallas más grandes = precio más alto\n",
+							"df_curated.groupBy('Screen_Category') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio'),\n",
+							"        F.round(F.mean('Inches'), 1).alias('Inches_Promedio')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Precio_Promedio')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Precio promedio por cantidad de RAM\n",
+							"# La RAM es uno de los factores que más impacta en el precio\n",
+							"df_curated.groupBy('Ram_GB') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio'),\n",
+							"        F.round(F.min('Price'), 2).alias('Precio_Min'),\n",
+							"        F.round(F.max('Price'), 2).alias('Precio_Max')\n",
+							"    ) \\\n",
+							"    .orderBy('Ram_GB') \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Valor por euro: Price_per_RAM_GB y Price_per_Storage_GB por Company\n",
+							"# Revela qué marcas ofrecen mejor relación calidad-precio\n",
+							"# Un valor más bajo significa mejor relación (pagas menos por cada GB)\n",
+							"df_curated.groupBy('Company') \\\n",
+							"    .agg(\n",
+							"        F.round(F.mean('Price_per_RAM_GB'), 2).alias('€/GB_RAM_Promedio'),\n",
+							"        F.round(F.mean('Price_per_Storage_GB'), 4).alias('€/GB_Storage_Promedio')\n",
+							"    ) \\\n",
+							"    .orderBy('€/GB_RAM_Promedio') \\\n",
+							"    .show(20, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"# SECCIÓN 2: Configuración Estándar de la Industria\n",
+							"\n",
+							"**Objetivo:** Identificar cuáles son las especificaciones más comunes del mercado.\n",
+							"Esto define la \"laptop estándar\" que la mayoría de los consumidores compran.\n",
+							"\n",
+							"**Por qué importa:** Permite a fabricantes y retailers entender qué configuraciones\n",
+							"deben priorizar en su catálogo y stock."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Distribución de RAM — ¿Cuánta RAM tiene la laptop típica?\n",
+							"# Identificamos la moda (valor más frecuente) y la distribución completa\n",
+							"print('=== DISTRIBUCIÓN DE RAM (GB) ===')\n",
+							"df_curated.groupBy('Ram_GB') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Porcentaje', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .show(truncate=False)\n",
+							"\n",
+							"# Moda de RAM\n",
+							"ram_mode = df_curated.groupBy('Ram_GB').count().orderBy(F.desc('count')).first()['Ram_GB']\n",
+							"print(f'>> RAM más común: {ram_mode} GB')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Distribución de almacenamiento total\n",
+							"# Revela si el mercado se inclina hacia SSD, HDD o combinaciones\n",
+							"print('=== DISTRIBUCIÓN DE ALMACENAMIENTO TOTAL (GB) ===')\n",
+							"df_curated.groupBy('Total_Storage_GB') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Porcentaje', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .show(15, truncate=False)\n",
+							"\n",
+							"storage_mode = df_curated.groupBy('Total_Storage_GB').count().orderBy(F.desc('count')).first()['Total_Storage_GB']\n",
+							"print(f'>> Almacenamiento más común: {storage_mode} GB')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Tipo de almacenamiento dominante — ¿SSD vs HDD?\n",
+							"# El mercado ha migrado a SSD, pero ¿en qué proporción?\n",
+							"print('=== DISTRIBUCIÓN POR STORAGE_CATEGORY ===')\n",
+							"df_curated.groupBy('Storage_Category') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Porcentaje', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .show(truncate=False)\n",
+							"\n",
+							"# Separar SSD y HDD para ver penetración\n",
+							"print('\\n=== SSD vs HDD ===')\n",
+							"df_curated.select(\n",
+							"    F.sum(F.when(F.col('SSD') > 0, 1).otherwise(0)).alias('Con_SSD'),\n",
+							"    F.sum(F.when(F.col('HDD') > 0, 1).otherwise(0)).alias('Con_HDD'),\n",
+							"    F.sum(F.when((F.col('SSD') > 0) & (F.col('HDD') > 0), 1).otherwise(0)).alias('SSD_Y_HDD')\n",
+							").show(vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Distribución de tamaño de pantalla (Inches)\n",
+							"# El tamaño de pantalla es un factor clave de diferenciación\n",
+							"print('=== DISTRIBUCIÓN DE PULGADAS ===')\n",
+							"df_curated.groupBy('Inches') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Porcentaje', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .show(truncate=False)\n",
+							"\n",
+							"inches_mode = df_curated.groupBy('Inches').count().orderBy(F.desc('count')).first()['Inches']\n",
+							"print(f'>> Tamaño de pantalla más común: {inches_mode} pulgadas')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Market share por marca de CPU\n",
+							"# Intel ha dominado históricamente, pero AMD ha ganado terreno\n",
+							"print('=== MARKET SHARE POR CPU_BRAND ===')\n",
+							"df_curated.groupBy('CPU_Brand') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Market_Share_%', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .show(truncate=False)\n",
+							"\n",
+							"# Market share por marca de GPU\n",
+							"print('=== MARKET SHARE POR GPU_BRAND ===')\n",
+							"df_curated.groupBy('GPU_Brand') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Market_Share_%', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Penetración de características premium\n",
+							"# ¿Qué porcentaje de laptops tienen GPU dedicada, pantalla táctil o panel IPS?\n",
+							"# Esto indica el nivel de sofisticación del mercado\n",
+							"df_curated.select(\n",
+							"    F.round(\n",
+							"        F.sum(F.when(F.col('Has_Dedicated_GPU') == 1, 1).otherwise(0)) / total_rows * 100, 1\n",
+							"    ).alias('%_Con_GPU_Dedicada'),\n",
+							"    F.round(\n",
+							"        F.sum(F.when(F.col('TouchScreen') == 1, 1).otherwise(0)) / total_rows * 100, 1\n",
+							"    ).alias('%_Con_Pantalla_Tactil'),\n",
+							"    F.round(\n",
+							"        F.sum(F.when(F.col('Ips') == 1, 1).otherwise(0)) / total_rows * 100, 1\n",
+							"    ).alias('%_Con_Panel_IPS')\n",
+							").show(vertical=True)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Distribución por sistema operativo\n",
+							"# Windows domina, pero ¿qué peso tienen Chrome OS y macOS?\n",
+							"print('=== DISTRIBUCIÓN POR SISTEMA OPERATIVO ===')\n",
+							"df_curated.groupBy('OpSys') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Market_Share_%', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Configuración estándar completa (combinación más frecuente)\n",
+							"# Esto define la \"laptop típica\" del mercado\n",
+							"print('=== COMBINACIÓN MÁS FRECUENTE (RAM + Storage + Inches + CPU_Brand) ===')\n",
+							"df_curated.groupBy('Ram_GB', 'Total_Storage_GB', 'Inches', 'CPU_Brand') \\\n",
+							"    .count() \\\n",
+							"    .orderBy(F.desc('count')) \\\n",
+							"    .limit(10) \\\n",
+							"    .show(truncate=False)\n",
+							"\n",
+							"# Resumen de la configuración estándar\n",
+							"top_config = df_curated.groupBy('Ram_GB', 'Total_Storage_GB', 'Inches', 'CPU_Brand') \\\n",
+							"    .count().orderBy(F.desc('count')).first()\n",
+							"\n",
+							"print('\\n>>> CONFIGURACIÓN ESTÁNDAR DEL MERCADO:')\n",
+							"print(f'    RAM: {top_config[\"Ram_GB\"]} GB')\n",
+							"print(f'    Storage: {top_config[\"Total_Storage_GB\"]} GB')\n",
+							"print(f'    Pantalla: {top_config[\"Inches\"]}\"')\n",
+							"print(f'    CPU: {top_config[\"CPU_Brand\"]}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"# SECCIÓN 3: Concentración del Mercado (Market Share por Oferta)\n",
+							"\n",
+							"**Objetivo:** Analizar cómo se distribuye la oferta entre marcas y segmentos.\n",
+							"Identificar si el mercado está concentrado en pocas marcas o es fragmentado.\n",
+							"\n",
+							"**Por qué importa:** Un mercado concentrado indica oligopolio (pocas marcas dominan),\n",
+							"mientras que uno fragmentado sugiere competencia intensa y nichos de mercado."
+						]
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Top companies por cantidad de modelos en oferta\n",
+							"# Revela qué marcas tienen el catálogo más amplio\n",
+							"print('=== CONCENTRACIÓN DEL MERCADO POR COMPANY ===')\n",
+							"df_market_share = df_curated.groupBy('Company') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio'),\n",
+							"        F.round(F.count('*') / total_rows * 100, 1).alias('%_Market_Share')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Cantidad'))\n",
+							"\n",
+							"df_market_share.show(20, truncate=False)\n",
+							"\n",
+							"# Calcular concentración top 5\n",
+							"top5_share = df_market_share.limit(5).agg(F.sum('%_Market_Share')).first()[0]\n",
+							"print(f'>> Top 5 marcas concentran el {top5_share}% de la oferta')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Market share por CPU_Brand — ¿Intel domina o AMD gana terreno?\n",
+							"print('=== MARKET SHARE POR CPU_BRAND ===')\n",
+							"df_curated.groupBy('CPU_Brand') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.count('*') / total_rows * 100, 1).alias('%_Market_Share'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Cantidad')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Market share por GPU_Brand\n",
+							"print('=== MARKET SHARE POR GPU_BRAND ===')\n",
+							"df_curated.groupBy('GPU_Brand') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.count('*') / total_rows * 100, 1).alias('%_Market_Share'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Cantidad')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Market share por categoría de pantalla\n",
+							"print('=== MARKET SHARE POR SCREEN_CATEGORY ===')\n",
+							"df_curated.groupBy('Screen_Category') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.count('*') / total_rows * 100, 1).alias('%_Market_Share'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Cantidad')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Market share por sistema operativo\n",
+							"print('=== MARKET SHARE POR SISTEMA OPERATIVO ===')\n",
+							"df_curated.groupBy('OpSys') \\\n",
+							"    .agg(\n",
+							"        F.count('*').alias('Cantidad'),\n",
+							"        F.round(F.count('*') / total_rows * 100, 1).alias('%_Market_Share'),\n",
+							"        F.round(F.mean('Price'), 2).alias('Precio_Promedio')\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Cantidad')) \\\n",
+							"    .show(truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Tabla resumen final: Company | Cantidad | %Market | AvgPrice | Top Model\n",
+							"# Esta tabla sintetiza toda la información de concentración del mercado\n",
+							"print('=== RESUMEN FINAL DEL MERCADO ===')\n",
+							"\n",
+							"# Obtener el modelo más vendido (TypeName) por cada Company\n",
+							"window = Window.partitionBy('Company').orderBy(F.desc('count'))\n",
+							"top_models = df_curated.groupBy('Company', 'TypeName') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('rank', F.row_number().over(window)) \\\n",
+							"    .filter(F.col('rank') == 1) \\\n",
+							"    .select('Company', F.col('TypeName').alias('Modelo_Mas_Comun'))\n",
+							"\n",
+							"df_market_share.join(top_models, 'Company', 'left') \\\n",
+							"    .select(\n",
+							"        'Company',\n",
+							"        'Cantidad',\n",
+							"        F.concat(F.col('%_Market_Share').cast('string'), F.lit('%')).alias('%_Market_Share'),\n",
+							"        'Precio_Promedio',\n",
+							"        'Modelo_Mas_Comun'\n",
+							"    ) \\\n",
+							"    .orderBy(F.desc('Cantidad')) \\\n",
+							"    .show(20, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Análisis cruzado: Company vs CPU_Brand\n",
+							"# ¿Qué marcas usan Intel vs AMD? Esto revela estrategias de diferenciación\n",
+							"print('=== COMPANY vs CPU_BRAND (cruce estratégico) ===')\n",
+							"df_curated.groupBy('Company', 'CPU_Brand') \\\n",
+							"    .count() \\\n",
+							"    .withColumn('Porcentaje', F.round(F.col('count') / total_rows * 100, 1)) \\\n",
+							"    .orderBy('Company', F.desc('count')) \\\n",
+							"    .show(40, truncate=False)"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "code",
+						"source": [
+							"# Correlación entre variables numéricas y Price\n",
+							"# Identifica qué features tienen mayor poder predictivo del precio\n",
+							"from pyspark.ml.feature import VectorAssembler\n",
+							"from pyspark.ml.stat import Correlation\n",
+							"\n",
+							"numeric_features = ['Ram_GB', 'Inches', 'Weight_kg', 'Total_Storage_GB', 'ppi',\n",
+							"                    'X_res', 'Y_res', 'Price']\n",
+							"\n",
+							"df_corr = df_curated.select(numeric_features).dropna()\n",
+							"\n",
+							"assembler = VectorAssembler(inputCols=numeric_features, outputCol='features')\n",
+							"df_vector = assembler.transform(df_corr).select('features')\n",
+							"\n",
+							"corr_matrix = Correlation.corr(df_vector, 'features').head()[0].toArray()\n",
+							"\n",
+							"print('=== MATRIZ DE CORRELACIÓN CON PRICE ===')\n",
+							"for i, col in enumerate(numeric_features):\n",
+							"    corr_with_price = corr_matrix[i, -1]  # Última columna es Price\n",
+							"    if col != 'Price':\n",
+							"        print(f'  {col:25s} → r = {corr_with_price:+.4f}')"
+						],
+						"outputs": [],
+						"execution_count": null
+					},
+					{
+						"cell_type": "markdown",
+						"source": [
+							"---\n",
+							"## Resumen de Insights Clave\n",
+							"\n",
+							"Este EDA ha revelado los siguientes insights de negocio:\n",
+							"\n",
+							"1. **Precio Promedio del Mercado:** Se ha identificado el rango de precios dominante,\n",
+							"   las marcas más caras/baratas y la relación precio-specs.\n",
+							"\n",
+							"2. **Configuración Estándar:** Se ha determinado la laptop típica del mercado\n",
+							"   (RAM, Storage, Inches, CPU más frecuentes) y la penetración de features premium.\n",
+							"\n",
+							"3. **Concentración del Mercado:** Se ha cuantificado el market share por Company,\n",
+							"   CPU_Brand, GPU_Brand y Screen_Category, identificando si el mercado está\n",
+							"   concentrado o fragmentado.\n",
+							"\n",
+							"4. **Correlaciones:** Se han identificado las features con mayor correlación\n",
+							"   con el precio, lo que será útil para el modelo de ML (notebook 05)."
+						]
+					}
+				]
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/sparkpoollaptop')]",
+			"type": "Microsoft.Synapse/workspaces/bigDataPools",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"autoPause": {
+					"enabled": true,
+					"delayInMinutes": 15
+				},
+				"autoScale": {
+					"enabled": true,
+					"maxNodeCount": 3,
+					"minNodeCount": 3
+				},
+				"nodeCount": 3,
+				"nodeSize": "Small",
+				"nodeSizeFamily": "MemoryOptimized",
+				"sparkVersion": "3.4",
+				"isComputeIsolationEnabled": false,
+				"sessionLevelPackagesEnabled": false,
+				"annotations": []
+			},
+			"dependsOn": [],
+			"location": "northeurope"
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/default/synapse-ws-sql--syn-laptop-dl-dev-001')]",
+			"type": "Microsoft.Synapse/workspaces/managedVirtualNetworks/managedPrivateEndpoints",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"privateLinkResourceId": "/subscriptions/e5e55830-4163-4a94-bf6c-ed6c26257dfc/resourceGroups/rg-gabritenreiro/providers/Microsoft.Synapse/workspaces/syn-laptop-dl-dev-001",
+				"groupId": "sql",
+				"fqdns": [
+					"syn-laptop-dl-dev-001.bc42f189-5221-46bb-95e5-6be56b97502b.sql.azuresynapse.net"
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/managedVirtualNetworks/default')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('workspaceName'), '/default/synapse-ws-sqlOnDemand--syn-laptop-dl-dev-001')]",
+			"type": "Microsoft.Synapse/workspaces/managedVirtualNetworks/managedPrivateEndpoints",
+			"apiVersion": "2019-06-01-preview",
+			"properties": {
+				"privateLinkResourceId": "/subscriptions/e5e55830-4163-4a94-bf6c-ed6c26257dfc/resourceGroups/rg-gabritenreiro/providers/Microsoft.Synapse/workspaces/syn-laptop-dl-dev-001",
+				"groupId": "sqlOnDemand",
+				"fqdns": [
+					"syn-laptop-dl-dev-001-ondemand.bc42f189-5221-46bb-95e5-6be56b97502b.sql.azuresynapse.net"
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('workspaceId'), '/managedVirtualNetworks/default')]"
+			]
+		}
+	]
+}
