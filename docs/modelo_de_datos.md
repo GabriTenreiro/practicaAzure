@@ -105,9 +105,33 @@ laptop_scrap_data.csv (1,563 filas)
     │   ├─ Añade 6 columnas derivadas
     │   └─ Curated: 1,547 filas (particionado por Company)
     │
-    └─ 03_quarantine_to_rejected.ipynb
-        ├─ Rejected: 3 filas (100% NULL)
-        └─ Quarantine: 11 filas (recuperables)
+    ├─ 03_quarantine_to_rejected.ipynb
+    │   ├─ Rejected: 3 filas (100% NULL)
+    │   └─ Quarantine: 11 filas (recuperables)
+    │
+    ├─ 04_eda_y_visualizacion.ipynb
+    │   ├─ Sección 1: Precio Promedio del Mercado
+    │   │   ├─ Estadísticas descriptivas de Price
+    │   │   ├─ Precio por Company, CPU_Brand, GPU_Brand, Screen_Category
+    │   │   ├─ Segmentación por rangos de precio
+    │   │   └─ Relación calidad-precio (€/GB_RAM, €/GB_Storage)
+    │   ├─ Sección 2: Configuración Estándar de la Industria
+    │   │   ├─ Distribución de RAM, Storage, Inches
+    │   │   ├─ Market share por CPU_Brand, GPU_Brand, OpSys
+    │   │   ├─ Penetración de features premium (GPU, Touch, IPS)
+    │   │   └─ Combo más frecuente (configuración estándar)
+    │   └─ Sección 3: Concentración del Mercado
+    │       ├─ Top companies por cantidad y % market share
+    │       ├─ Cruce Company vs CPU_Brand
+    │       └─ Matriz de correlación con Price
+    │
+    └─ 05_modelado_ml.ipynb
+        ├─ Feature selection (excluye data leaks: Price_per_*)
+        ├─ Pipeline: StringIndexer → OneHotEncoder → VectorAssembler → StandardScaler
+        ├─ Train/Test split 80/20
+        ├─ Modelos: LinearRegression, RandomForest, GBTRegressor
+        ├─ Evaluación: RMSE, MAE, R²
+        └─ Feature Importance (drivers del precio)
 ```
 
 ## Infraestructura Azure
