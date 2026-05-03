@@ -82,8 +82,8 @@
 					"    pass\n",
 					"\n",
 					"RAW_PATH = f'abfss://raw@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptop_scrap_data.csv'\n",
-					"PROCESSED_PATH = f'abfss://processed@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptops_clean'\n",
-					"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/laptops_quarantine'\n",
+					"PROCESSED_PATH = f'abfss://processed@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
+					"QUARANTINE_PATH = f'abfss://quarantine@{STORAGE_ACCOUNT}.dfs.core.windows.net/'\n",
 					"\n",
 					"assert RAW_PATH and PROCESSED_PATH and QUARANTINE_PATH, 'Paths cannot be empty'\n",
 					"\n",
@@ -99,7 +99,12 @@
 				"cell_type": "markdown",
 				"source": [
 					"---\n",
-					"## 1. Lectura del dataset RAW con schema explícito"
+					"## 1. Lectura del dataset RAW con schema explícito\n",
+					"\n",
+					"Usamos schema explícito en lugar de inferSchema para:\n",
+					"- Evitar inferencia incorrecta en producción\n",
+					"- Garantizar tipos consistentes entre ejecuciones\n",
+					"- Mejorar rendimiento (no necesita escanear datos para inferir)"
 				]
 			},
 			{
@@ -132,13 +137,18 @@
 					"\n",
 					"df_raw = spark.read \\\n",
 					"    .option('header', 'true') \\\n",
-					"    .option('quote', '\\\"') \\\n",
-					"    .option('escape', '\\\"') \\\n",
+					"    .option('quote', '\"') \\\n",
+					"    .option('escape', '\"') \\\n",
 					"    .option('treatEmptyValuesAsNulls', 'true') \\\n",
 					"    .schema(laptop_schema) \\\n",
 					"    .csv(RAW_PATH)\n",
 					"\n",
-					"print(f'Filas cargadas: {df_raw.count():,}')\n",
+					"# Cacheamos df_raw para evitar relecturas del CSV en cada operación de diagnóstico\n",
+					"# Sin cache, cada count() o show() volvería a leer el archivo completo\n",
+					"df_raw.cache()\n",
+					"\n",
+					"raw_count = df_raw.count()\n",
+					"print(f'Filas cargadas: {raw_count:,}')\n",
 					"print(f'Columnas: {len(df_raw.columns)}')\n",
 					"print(f'Particiones: {df_raw.rdd.getNumPartitions()}')"
 				],
@@ -162,13 +172,16 @@
 				"cell_type": "markdown",
 				"source": [
 					"---\n",
-					"## 2. Diagnóstico rápido de calidad"
+					"## 2. Diagnóstico rápido de calidad\n",
+					"\n",
+					"Calculamos todos los diagnósticos en un solo pase para minimizar acciones Spark.\n",
+					"Como df_raw está cacheado, las acciones posteriores serán rápidas (lectura desde memoria)."
 				]
 			},
 			{
 				"cell_type": "code",
 				"source": [
-					"# Perfil de nulos por columna\n",
+					"# Perfil de nulos por columna — un solo pase gracias al cache\n",
 					"null_profile = df_raw.select([\n",
 					"    F.count(F.when(F.col(c).isNull(), c)).alias(c)\n",
 					"    for c in df_raw.columns\n",
@@ -181,10 +194,9 @@
 			{
 				"cell_type": "code",
 				"source": [
-					"total_rows = df_raw.count()\n",
-					"\n",
+					"# % de nulos por columna — reutiliza el conteo total del cache\n",
 					"null_counts = df_raw.select([\n",
-					"    (F.count(F.when(F.col(c).isNull(), c)) / total_rows * 100).alias(c)\n",
+					"    (F.count(F.when(F.col(c).isNull(), c)) / raw_count * 100).alias(c)\n",
 					"    for c in df_raw.columns\n",
 					"])\n",
 					"\n",
@@ -197,7 +209,7 @@
 				"cell_type": "code",
 				"source": [
 					"# Duplicados exactos\n",
-					"dup_count = df_raw.count() - df_raw.distinct().count()\n",
+					"dup_count = raw_count - df_raw.distinct().count()\n",
 					"print(f'Filas duplicadas exactas: {dup_count}')"
 				],
 				"execution_count": 21
@@ -236,11 +248,18 @@
 					"    F.col('Inches').isNull() | (F.col('Inches') <= 0)\n",
 					")\n",
 					"\n",
+					"# df_raw está cacheado, así que ambos filters leen desde memoria (no re-lee CSV)\n",
 					"df_quarantine = df_raw.filter(anomaly_condition)\n",
 					"df_clean = df_raw.filter(~anomaly_condition)\n",
 					"\n",
-					"print(f'Registros en Quarantine: {df_quarantine.count():,}')\n",
-					"print(f'Registros Clean: {df_clean.count():,}')"
+					"quarantine_count = df_quarantine.count()\n",
+					"clean_count = df_clean.count()\n",
+					"\n",
+					"print(f'Registros en Quarantine: {quarantine_count:,}')\n",
+					"print(f'Registros Clean: {clean_count:,}')\n",
+					"\n",
+					"# Liberamos memoria de df_raw ya que tenemos los splits materializados\n",
+					"df_raw.unpersist()"
 				],
 				"execution_count": 23
 			},
@@ -260,13 +279,21 @@
 					"\n",
 					"Correcciones aplicadas a AMBOS branches (clean y quarantine):\n",
 					"- `HHD` → renombrar a `HDD` (typo del scraping)\n",
-					"- Casts explícitos para garantizar tipos correctos"
+					"- Casts explícitos para garantizar tipos correctos\n",
+					"\n",
+					"Es CRÍTICO estandarizar ambos branches para mantener consistencia de schema\n",
+					"entre processed, quarantine y rejected."
 				]
 			},
 			{
 				"cell_type": "code",
 				"source": [
 					"def standardize_columns(df):\n",
+					"    \"\"\"Aplica correcciones de schema a un DataFrame.\n",
+					"    \n",
+					"    Se aplica a AMBOS branches (clean y quarantine) para garantizar\n",
+					"    que todos los datos del pipeline tengan el mismo schema.\n",
+					"    \"\"\"\n",
 					"    return (df\n",
 					"        .withColumnRenamed('HHD', 'HDD')\n",
 					"        .withColumn('Ram_GB', F.col('Ram_GB').cast('int'))\n",
@@ -280,6 +307,7 @@
 					"        .withColumn('Total_Storage_GB', F.col('Total_Storage_GB').cast('int'))\n",
 					"    )\n",
 					"\n",
+					"# Estandarizar AMBOS branches para consistencia de schema\n",
 					"df_clean = standardize_columns(df_clean)\n",
 					"df_quarantine = standardize_columns(df_quarantine)\n",
 					"\n",
@@ -298,11 +326,13 @@
 			{
 				"cell_type": "code",
 				"source": [
+					"# Escritura de datos limpios a processed\n",
 					"df_clean.write \\\n",
 					"    .mode('overwrite') \\\n",
 					"    .option('compression', 'snappy') \\\n",
 					"    .parquet(PROCESSED_PATH)\n",
 					"\n",
+					"# Escritura de datos anómalos a quarantine\n",
 					"df_quarantine.write \\\n",
 					"    .mode('overwrite') \\\n",
 					"    .option('compression', 'snappy') \\\n",
@@ -330,8 +360,8 @@
 			{
 				"cell_type": "code",
 				"source": [
-					"# Devolver conteo de filas en quarantine para la pipeline\n",
-					"quarantine_count = df_quarantine.count()\n",
+					"# Devolver conteo de filas en quarantine para la pipeline (IfCondition)\n",
+					"# Este valor se lee en la pipeline como: activity('01_...').output.runOutput\n",
 					"print(f'\\n📤 Exit value: {quarantine_count} filas en quarantine')\n",
 					"mssparkutils.notebook.exit(quarantine_count)"
 				],

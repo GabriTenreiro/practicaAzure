@@ -7,9 +7,9 @@
 				"type": "SynapseNotebook",
 				"dependsOn": [],
 				"policy": {
-					"timeout": "0.12:00:00",
-					"retry": 0,
-					"retryIntervalInSeconds": 30,
+					"timeout": "0.00:30:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 60,
 					"secureOutput": false,
 					"secureInput": false
 				},
@@ -26,11 +26,11 @@
 					},
 					"executorSize": "Small",
 					"conf": {
-						"spark.dynamicAllocation.enabled": null,
-						"spark.dynamicAllocation.minExecutors": null,
-						"spark.dynamicAllocation.maxExecutors": null
+						"spark.dynamicAllocation.enabled": "true",
+						"spark.dynamicAllocation.minExecutors": "1",
+						"spark.dynamicAllocation.maxExecutors": "2"
 					},
-					"numExecutors": null
+					"numExecutors": 1
 				}
 			},
 			{
@@ -45,9 +45,9 @@
 					}
 				],
 				"policy": {
-					"timeout": "0.12:00:00",
-					"retry": 0,
-					"retryIntervalInSeconds": 30,
+					"timeout": "0.00:30:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 60,
 					"secureOutput": false,
 					"secureInput": false
 				},
@@ -64,11 +64,11 @@
 					},
 					"executorSize": "Small",
 					"conf": {
-						"spark.dynamicAllocation.enabled": null,
-						"spark.dynamicAllocation.minExecutors": null,
-						"spark.dynamicAllocation.maxExecutors": null
+						"spark.dynamicAllocation.enabled": "true",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "3"
 					},
-					"numExecutors": null
+					"numExecutors": 2
 				}
 			},
 			{
@@ -85,7 +85,7 @@
 				"userProperties": [],
 				"typeProperties": {
 					"expression": {
-						"value": "@greater(activity('01_ingesta_raw_a_processed').output.status.Output.result, 0)",
+						"value": "@greater(int(activity('01_ingesta_raw_a_processed').output.runOutput), 0)",
 						"type": "Expression"
 					},
 					"ifTrueActivities": [
@@ -94,9 +94,9 @@
 							"type": "SynapseNotebook",
 							"dependsOn": [],
 							"policy": {
-								"timeout": "0.12:00:00",
-								"retry": 0,
-								"retryIntervalInSeconds": 30,
+								"timeout": "0.00:15:00",
+								"retry": 1,
+								"retryIntervalInSeconds": 60,
 								"secureOutput": false,
 								"secureInput": false
 							},
@@ -113,14 +113,96 @@
 								},
 								"executorSize": "Small",
 								"conf": {
-									"spark.dynamicAllocation.enabled": null,
-									"spark.dynamicAllocation.minExecutors": null,
-									"spark.dynamicAllocation.maxExecutors": null
+									"spark.dynamicAllocation.enabled": "true",
+									"spark.dynamicAllocation.minExecutors": "1",
+									"spark.dynamicAllocation.maxExecutors": "2"
 								},
-								"numExecutors": null
+								"numExecutors": 2
 							}
 						}
 					]
+				}
+			},
+			{
+				"name": "04_eda_y_visualizacion",
+				"type": "SynapseNotebook",
+				"dependsOn": [
+					{
+						"activity": "02_processed_to_curated",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "CheckQuarantine",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.00:30:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 60,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebook": {
+						"referenceName": "04_eda_y_visualizacion",
+						"type": "NotebookReference"
+					},
+					"snapshot": true,
+					"sparkPool": {
+						"referenceName": "sparkpoollaptop",
+						"type": "BigDataPoolReference"
+					},
+					"executorSize": "Small",
+					"conf": {
+						"spark.dynamicAllocation.enabled": "true",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "3"
+					},
+					"numExecutors": 2
+				}
+			},
+			{
+				"name": "05_modelado_ml",
+				"type": "SynapseNotebook",
+				"dependsOn": [
+					{
+						"activity": "04_eda_y_visualizacion",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.01:00:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 60,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebook": {
+						"referenceName": "05_modelado_ml",
+						"type": "NotebookReference"
+					},
+					"snapshot": true,
+					"sparkPool": {
+						"referenceName": "sparkpoollaptop",
+						"type": "BigDataPoolReference"
+					},
+					"executorSize": "Small",
+					"conf": {
+						"spark.dynamicAllocation.enabled": "true",
+						"spark.dynamicAllocation.minExecutors": "2",
+						"spark.dynamicAllocation.maxExecutors": "3"
+					},
+					"numExecutors": 2
 				}
 			}
 		],
